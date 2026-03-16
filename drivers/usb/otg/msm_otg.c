@@ -1346,6 +1346,26 @@ static int msm_otg_notify_chg_type(struct msm_otg *motg)
 	return 0;
 }
 
+#ifdef CONFIG_LGE_PM
+static unsigned prev_mA = 0;
+#define GET_AC_PSY(_motg) \
+	({\
+		struct power_supply *psy = &_motg->usb_psy;\
+		if (likely(_motg->ac_psy)) {\
+			psy = _motg->ac_psy;\
+		} else {\
+			pr_info("Try init ac_psy.\n");\
+			_motg->ac_psy = power_supply_get_by_name("ac");\
+			if (_motg->ac_psy) {\
+				pr_info("Success getting ac_psy\n");\
+				psy = (struct power_supply *)_motg->ac_psy;\
+			}\
+		}\
+		psy;;\
+	})
+#endif
+
+
 static int msm_otg_notify_power_supply(struct msm_otg *motg, unsigned mA)
 {
 	if (!psy) {
@@ -1353,28 +1373,181 @@ static int msm_otg_notify_power_supply(struct msm_otg *motg, unsigned mA)
 		goto psy_error;
 	}
 
+	/* LGE_CHANGE_S: Cable Detect & Current Set */
+#ifdef CONFIG_LGE_PM
+	if (motg->chg_type == USB_DCP_CHARGER || motg->chg_type == USB_PROPRIETARY_CHARGER ||
+			motg->chg_type == USB_FLOATED_CHARGER){
+		pr_info("\n[LGE]msm_otg_notify_power_supply: "
+				"power_supply_get_by_name(ac)\n");
+		psy = GET_AC_PSY(motg);
+	} else {
+		pr_info("\n[LGE] msm_otg_notify_power_supply: "
+				"power_supply_get_by_name(usb)\n");
+		psy = &motg->usb_psy;
+	}
+	if (!psy) {
+		goto psy_error;
+	}
+
+	pr_debug("[LGE] motg->cur_power: %d mA: %d\n", motg->cur_power, mA);
+#else
+	pr_debug("\n[LGE] msm_otg_notify_power_supply: "
+			"power_supply_get_by_name(usb)\n");
+	psy = &motg->usb_psy;
+
+	if (!psy) {
+		goto psy_error;
+	}
+
+	pr_debug("[LGE] motg->cur_power: %d mA: %d\n", motg->cur_power, mA);
+#endif
+	/* LGE_CHANGE_E */
+
 	if (motg->cur_power == 0 && mA > 2) {
+#ifdef CONFIG_LGE_PM
+		prev_mA = mA;
+#endif
 		/* Enable charging */
 		if (power_supply_set_online(psy, true))
 			goto psy_error;
 		if (power_supply_set_current_limit(psy, 1000*mA))
 			goto psy_error;
-	} else if (motg->cur_power > 0 && (mA == 0 || mA == 2)) {
+#ifdef CONFIG_LGE_PM
+		power_supply_changed(psy);
+
+		if(!strncmp(psy->name,"ac", 2)) {
+			psy = &motg->usb_psy;
+			if (!psy)
+				goto psy_error;
+
+			// if ac_online set -> copy usb online set
+			if (power_supply_set_online(psy, true))
+				goto psy_error;
+
+			if(power_supply_set_current_limit(psy, 1000*mA))
+				goto psy_error;
+			power_supply_changed(psy);
+
+			psy = GET_AC_PSY(motg);
+			if (!psy)
+				goto psy_error;
+		}
+#endif
+	}
+#ifdef CONFIG_LGE_PM
+	// Disconnect Mode
+	else if (motg->cur_power > 0 && (mA == 0)) {
+#ifdef CONFIG_LGE_PM
+		prev_mA = mA;
+#endif
+
 		/* Disable charging */
 		if (power_supply_set_online(psy, false))
 			goto psy_error;
 		/* Set max current limit */
 		if (power_supply_set_current_limit(psy, 0))
 			goto psy_error;
-	} else {
+
+#ifdef CONFIG_LGE_PM
+		power_supply_changed(psy);
+		if(!strncmp(psy->name,"ac", 2)) {
+			psy = &motg->usb_psy;
+			if (!psy)
+				goto psy_error;
+
+			if (power_supply_set_online(psy, false))
+				goto psy_error;
+
+			if(power_supply_set_current_limit(psy, 0))
+				goto psy_error;
+			// copy end
+			power_supply_changed(psy);
+
+			psy = GET_AC_PSY(motg);
+			if (!psy)
+				goto psy_error;
+		}
+#endif
+
+		/* LGE_CHANGE_S */
+		/* Below line comes from 'msm_otg_sm_work' because of AC(TA) removal detection*/
+		if(mA == 0)
+			motg->chg_type = USB_INVALID_CHARGER;
+		/* LGE_CHANGE_E */
+	}
+	// Suspend Mode
+	else if (motg->cur_power > 0 && (mA == 2)) {
+		/* Disable charging */
+		if (power_supply_set_online(psy, true))
+			goto psy_error;
+		/* Set max current limit */
+		if (power_supply_set_current_limit(psy, 1000*prev_mA))
+			goto psy_error;
+
+		power_supply_changed(psy);
+
+		// if ac_online set -> copy usb online set
+		if(!strncmp(psy->name,"ac", 2)) {
+			psy = &motg->usb_psy;
+			if (!psy)
+				goto psy_error;
+
+			if (power_supply_set_online(psy, true))
+				goto psy_error;
+
+			if(power_supply_set_current_limit(psy, 1000*prev_mA))
+				goto psy_error;
+			// Copy end
+
+			power_supply_changed(psy);
+
+			psy = GET_AC_PSY(motg);
+			if (!psy)
+				goto psy_error;
+		}
+	}
+#else
+	// QCT Original Code
+	else if (motg->cur_power > 0 && (mA == 0 || mA == 2)) {
+		/* Disable charging */
+		if (power_supply_set_online(psy, false))
+			goto psy_error;
+		/* Set max current limit */
+		if (power_supply_set_current_limit(psy, 0))
+			goto psy_error;
+	}
+#endif
+	else {
 		if (power_supply_set_online(psy, true))
 			goto psy_error;
 		/* Current has changed (100/2 --> 500) */
 		if (power_supply_set_current_limit(psy, 1000*mA))
 			goto psy_error;
+#ifdef CONFIG_LGE_PM
+		power_supply_changed(psy);
+		if(!strncmp(psy->name,"ac", 2)) {
+			psy = &motg->usb_psy;
+			if (!psy)
+				goto psy_error;
+
+			// if ac_online set -> copy usb online set
+			if (power_supply_set_online(psy, true))
+				goto psy_error;
+
+			if(power_supply_set_current_limit(psy, 1000*mA))
+				goto psy_error;
+
+			power_supply_changed(psy);
+			psy = GET_AC_PSY(motg);
+			if (!psy)
+				goto psy_error;
+		}
+#endif
 	}
 
+#ifndef CONFIG_LGE_PM
 	power_supply_changed(psy);
+#endif
 	return 0;
 
 psy_error:
@@ -1417,6 +1590,68 @@ static void msm_otg_notify_charger(struct msm_otg *motg, unsigned mA)
 	 */
 	if (motg->online && motg->cur_power == 0  && mA == 0)
 		msm_otg_set_online_status(motg);
+
+/* LGE_CHANGE_S: Cable Detection */
+#if defined (CONFIG_LGE_PM) && ( !defined (CONFIG_MACH_MSM8X10_W3C_VZW) && !defined (CONFIG_MACH_MSM8X10_W5C_VZW) )
+	cable = lge_pm_get_cable_type();
+
+	if (mA > 2 && cable != NO_INIT_CABLE) {
+#if defined (CONFIG_MACH_MSM8926_X5_VZW) || defined (CONFIG_MACH_MSM8926_X10_VZW) || defined (CONFIG_MACH_MSM8926_E7LTE_VZW_US) || defined (CONFIG_MACH_MSM8926_E9LTE_VZW_US)
+		if ( cable == CABLE_56K || cable == CABLE_130K || cable == CABLE_910K ) {
+			mA = lge_pm_get_usb_current();
+			dev_info(motg->phy.dev, "factory cable detected set current to %u\n", mA);
+		}
+#else
+#if defined (CONFIG_MACH_MSM8226_E7WIFI) || defined (CONFIG_MACH_MSM8226_E8WIFI) || \
+    defined (CONFIG_MACH_MSM8926_E8LTE) || defined (CONFIG_MACH_MSM8226_E9WIFI) || \
+    defined (CONFIG_MACH_MSM8226_E9WIFIN) || defined (CONFIG_MACH_MSM8926_T8LTE)
+#define INPUT_CURRENT_910K 500
+		if (motg->chg_type == USB_SDP_CHARGER){
+			if (((cable == CABLE_910K) && qpnp_get_batt_present()) ||\
+				(cable == CABLE_56K) ) {
+				mA  = INPUT_CURRENT_910K;
+				pr_info("[DEBUG] : 56K or 910K Cable is connected mA = %d\n", mA);
+			} else {
+				mA  = lge_pm_get_usb_current();
+				pr_info("[DEBUG] : SDP CHARGER is connected mA = %d\n", mA);
+			}
+		}
+#else
+		if (motg->chg_type == USB_SDP_CHARGER)
+			mA  = lge_pm_get_usb_current();
+#endif
+#endif
+		else if (motg->chg_type == USB_DCP_CHARGER ||\
+			 motg->chg_type == USB_PROPRIETARY_CHARGER ||\
+			 motg->chg_type == USB_FLOATED_CHARGER){
+#ifdef CONFIG_LGE_PM_SUPPORT_WEAK_BATTERYPACK
+			psy = power_supply_get_by_name("ac");
+			if (psy) {
+				psy->get_property(psy, POWER_SUPPLY_PROP_BATTERYPACK_ONLINE, &ret);
+
+				if (ret.intval == 1)
+					mA = 1000;
+				else
+					mA = lge_pm_get_ta_current();
+
+				pr_err("htc onilne = %d mA = %d\n", ret.intval, mA);
+			}
+#else
+			mA  = lge_pm_get_ta_current();
+#endif
+		}
+	}
+#elif defined (CONFIG_LGE_PM) && ( defined (CONFIG_MACH_MSM8X10_W3C_VZW) || defined (CONFIG_MACH_MSM8X10_W5C_VZW) )
+    cable = lge_pm_get_cable_type();
+
+    if (mA > 2 && cable != NO_INIT_CABLE) {
+        if ( cable == CABLE_56K	|| cable == CABLE_130K || cable == CABLE_910K ) {
+            mA = lge_pm_get_usb_current();
+            dev_info(motg->phy.dev, "factory cable detected set current to %u\n", mA);
+        }
+    }
+#endif
+/* LGE_CHANGE_E */
 
 	if (motg->cur_power == mA)
 		return;
