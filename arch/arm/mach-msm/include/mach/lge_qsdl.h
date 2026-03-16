@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2014,  The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014 LG Electronics, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -9,10 +9,17 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+#ifndef __MACH_LGE_QSDL_H
+#define __MACH_LGE_QSDL_H
 
-#ifndef SENSORS_ADSP_H
-#define SENSORS_ADSP_H
+struct lge_qsdl_platform_data {
+	const bool oneshot_read;
+	const bool using_uevent;
+};
 
-#include <linux/types.h>
+extern int lge_qsdl_trigger_modem_uevent(void);
+extern int lge_qsdl_increase_modem_ssr(void);
 
-#endif /* SENSORS_ADSP_H */
+#define LGE_QSDL_DEV_NAME "lge_qsdl"
+
+#endif
