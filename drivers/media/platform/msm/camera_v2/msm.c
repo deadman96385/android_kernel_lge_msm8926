@@ -160,6 +160,9 @@ static void msm_enqueue(struct msm_queue_head *qhead,
 		struct list_head *entry)
 {
 	unsigned long flags;
+
+	BUG_ON(!qhead);  /* LGE_CHANGE, soojong.jin, 2013.11.25, Fixed WBT*/ 
+	
 	spin_lock_irqsave(&qhead->lock, flags);
 	qhead->len++;
 	if (qhead->len > qhead->max)
