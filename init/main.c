@@ -79,6 +79,11 @@
 #include <asm/smp.h>
 #endif
 
+#ifdef CONFIG_LGE_PM_DQSL
+#include <linux/qpnp/power-on.h>
+#endif
+
+
 static int kernel_init(void *);
 
 extern void init_IRQ(void);
