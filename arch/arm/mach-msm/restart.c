@@ -37,6 +37,9 @@
 #include "msm_watchdog.h"
 #include "timer.h"
 #include "wdog_debug.h"
+#ifdef CONFIG_LGE_HANDLE_PANIC
+#include <mach/lge_handle_panic.h>
+#endif
 
 #define WDT0_RST	0x38
 #define WDT0_EN		0x40
@@ -74,7 +77,7 @@ static void *emergency_dload_mode_addr;
 
 /* Download mode master kill-switch */
 static int dload_set(const char *val, struct kernel_param *kp);
-static int download_mode = 1;
+static int download_mode = 0;
 module_param_call(download_mode, dload_set, param_get_int,
 			&download_mode, 0644);
 static int panic_prep_restart(struct notifier_block *this,
@@ -90,6 +93,7 @@ static struct notifier_block panic_blk = {
 
 static void set_dload_mode(int on)
 {
+	pr_err("%s(%d)\n", __func__, on);
 	if (dload_mode_addr) {
 		__raw_writel(on ? 0xE47B337D : 0, dload_mode_addr);
 		__raw_writel(on ? 0xCE14091A : 0,
@@ -101,6 +105,7 @@ static void set_dload_mode(int on)
 
 static bool get_dload_mode(void)
 {
+	pr_err("%s(%d)\n", __func__, dload_mode_enabled);
 	return dload_mode_enabled;
 }
 
