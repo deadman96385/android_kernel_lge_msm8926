@@ -2109,6 +2109,101 @@ void diagfwd_bridge_fn(int type)
 inline void diagfwd_bridge_fn(int type) { }
 #endif
 
+#ifdef CONFIG_LGE_DIAG_USB_ACCESS_LOCK
+int user_diag_enable = 0;
+#if defined(CONFIG_LGE_DIAG_USB_ACCESS_LOCK) && !defined(CONFIG_MACH_MSM8974_G3_SPR_US) && !defined(CONFIG_MACH_MSM8974_G2_SPR)
+#define DIAG_ENABLE	1
+#define DIAG_DISABLE	0
+#endif
+
+static ssize_t read_diag_enable(struct device *dev, struct device_attribute *attr,
+				   char *buf)
+{
+	int ret;
+
+	ret = sprintf(buf, "%d", user_diag_enable);
+
+	return ret;
+}
+static ssize_t write_diag_enable(struct device *dev,
+				    struct device_attribute *attr,
+				    const char *buf, size_t size)
+{
+    unsigned char string[2];
+
+    sscanf(buf, "%s", string);
+
+    if (!strncmp(string, "0", 1))
+    {
+    	user_diag_enable = 0;
+    }
+	else
+	{
+		user_diag_enable = 1;
+	}
+#if defined(CONFIG_LGE_DIAG_USB_ACCESS_LOCK) && !defined(CONFIG_MACH_MSM8974_G3_SPR_US) && !defined(CONFIG_MACH_MSM8974_G2_SPR)
+	if(lge_get_factory_boot()) {
+		printk("[FACTORY] force to diag enable, factory mode\n");
+		user_diag_enable = DIAG_ENABLE;
+	}
+#endif
+
+	printk("[%s] diag_enable: %d\n",__func__, user_diag_enable);
+
+	return size;
+}
+
+static DEVICE_ATTR(diag_enable, S_IRUGO | S_IWUSR, read_diag_enable, write_diag_enable);
+
+int lge_diag_create_file(struct platform_device *pdev)
+{
+    int ret;
+
+    ret = device_create_file(&pdev->dev, &dev_attr_diag_enable);
+    if (ret) {
+        device_remove_file(&pdev->dev, &dev_attr_diag_enable);
+        return ret;
+    }
+    return ret;
+}
+
+#if defined(CONFIG_LGE_DIAG_USB_ACCESS_LOCK) && !defined(CONFIG_MACH_MSM8974_G3_SPR_US) && !defined(CONFIG_MACH_MSM8974_G2_SPR)
+int get_diag_enable(void)
+{
+	if (lge_get_factory_boot())
+		user_diag_enable = DIAG_ENABLE;
+
+	return user_diag_enable;
+}
+EXPORT_SYMBOL(get_diag_enable);
+#endif
+
+int lge_diag_remove_file(struct platform_device *pdev)
+{
+    device_remove_file(&pdev->dev, &dev_attr_diag_enable);
+    return 0;
+}
+
+static int lge_diag_cmd_probe(struct platform_device *pdev)
+{
+    return lge_diag_create_file(pdev);
+}
+
+static int lge_diag_cmd_remove(struct platform_device *pdev)
+{
+    lge_diag_remove_file(pdev);
+    return 0;
+}
+
+static struct platform_driver lge_diag_cmd_driver = {
+    .probe		= lge_diag_cmd_probe,
+    .remove 	= lge_diag_cmd_remove,
+    .driver 	= {
+        .name = "lg_diag_cmd",
+        .owner	= THIS_MODULE,
+    },
+};
+#endif
 static int __init diagchar_init(void)
 {
 	dev_t dev;
