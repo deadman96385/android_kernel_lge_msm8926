@@ -7,6 +7,11 @@ config MSM_CAMERA_SENSOR
           data for camera support. The driver support V4L2
           subdev APIs.
 
+config LG_PROXY
+        bool "Qualcomm MSM camera proxy support"
+        depends on MSMB_CAMERA
+        ---help---
+        Enable support for proxy sensor for msm camera.
 config MSM_CPP
         bool "Qualcomm MSM Camera Post Processing Engine support"
         depends on MSMB_CAMERA
