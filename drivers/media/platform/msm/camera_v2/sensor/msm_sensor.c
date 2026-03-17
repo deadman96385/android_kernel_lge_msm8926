@@ -21,6 +21,13 @@
 #include <linux/regulator/consumer.h>
 
 /*#define CONFIG_MSMB_CAMERA_DEBUG*/
+
+/* LGE_FEATURE_APLUS */
+/* LGE_CHANGE_S, For laser sensor, 2014-02-24, sungmin.woo@lge.com */
+#if defined(CONFIG_LG_PROXY)
+#include "msm_proxy.h"
+#endif
+/* LGE_CHANGE_E, For laser sensor, 2014-02-24, sungmin.woo@lge.com */
 #undef CDBG
 #ifdef CONFIG_MSMB_CAMERA_DEBUG
 #define CDBG(fmt, args...) pr_err(fmt, ##args)
@@ -423,6 +430,7 @@ static struct msm_cam_clk_info cam_8974_clk_info[] = {
 
 int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 {
+	int rc = 0;   //LGE_CHANGE, To sync with KK for HI707. 20141112. sujeong.kwon@lge.com
 	struct msm_camera_power_ctrl_t *power_info;
 	enum msm_camera_device_type_t sensor_device_type;
 	struct msm_camera_i2c_client *sensor_i2c_client;
@@ -442,8 +450,20 @@ int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 			__func__, __LINE__, power_info, sensor_i2c_client);
 		return -EINVAL;
 	}
+#if 0 //original QCT. //LGE_CHANGE, To sync with KK for HI707. 20141112. sujeong.kwon@lge.com
 	return msm_camera_power_down(power_info, sensor_device_type,
 		sensor_i2c_client);
+#else
+	rc = msm_camera_power_down(power_info, sensor_device_type,
+		sensor_i2c_client);
+
+/*LGE_CHANGE_S, mipi end packet issue, 2013-10-15, kwangsik83.kim@lge.com*/
+if(strncmp(s_ctrl->sensordata->sensor_name, "hi707", strlen("hi707")) == 0)
+	s_ctrl->isFirstStream = FALSE;
+/*LGE_CHANGE_E, mipi end packet issue, 2013-10-15, kwangsik83.kim@lge.com*/
+
+	return rc;
+#endif
 }
 
 int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
@@ -453,6 +473,7 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	struct msm_camera_i2c_client *sensor_i2c_client;
 	struct msm_camera_slave_info *slave_info;
 	const char *sensor_name;
+	uint32_t retry = 0; /*LGE_CHANGE, power up retry, 2014-12-29, sujeong.kwon@lge.com*/
 
 	if (!s_ctrl) {
 		pr_err("%s:%d failed: %p\n",
@@ -472,15 +493,37 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 			sensor_i2c_client, slave_info, sensor_name);
 		return -EINVAL;
 	}
-
+/*LGE_CHANGE_S, power up retry, 2014-12-29, sujeong.kwon@lge.com*/
+	for (retry = 0; retry < 3; retry++) {
+/*LGE_CHANGE_E, power up retry, 2014-12-29, sujeong.kwon@lge.com*/
 	rc = msm_camera_power_up(power_info, s_ctrl->sensor_device_type,
 		sensor_i2c_client);
 	if (rc < 0)
 		return rc;
 	rc = msm_sensor_check_id(s_ctrl);
+
+	/*LGE_CHANGE_S, mipi end packet issue, 2013-10-15, kwangsik83.kim@lge.com*/
+	if(strncmp(s_ctrl->sensordata->sensor_name, "hi707", strlen("hi707")) == 0)
+		s_ctrl->isFirstStream = TRUE;
+	/*LGE_CHANGE_E, mipi end packet issue, 2013-10-15, kwangsik83.kim@lge.com*/
+
+/*LGE_CHANGE_S, power up retry, 2014-12-29, sujeong.kwon@lge.com*/
+#if 0   //QCT Original
 	if (rc < 0)
 		msm_camera_power_down(power_info, s_ctrl->sensor_device_type,
 					sensor_i2c_client);
+#else
+		if (rc < 0) {
+			msm_camera_power_down(power_info,
+				s_ctrl->sensor_device_type, sensor_i2c_client);
+			msleep(20);
+			continue;
+		} else {
+			break;
+		}
+	}
+#endif
+/*LGE_CHANGE_E, power up retry, 2014-12-29, sujeong.kwon@lge.com*/
 
 	return rc;
 }
@@ -516,6 +559,13 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		pr_err("%s: %s: read id failed\n", __func__, sensor_name);
 		return rc;
 	}
+
+ /* LGE_CHANGE_S, to use another fab id soojong.jin@lge.com*/
+	if(s_ctrl->sensordata->slave_info->sensor_id == 0x179) {
+		chipid &= 0xFFF; //enable lower 12bit to remove fab code
+       	pr_err("%s : sensor id %x",__func__, s_ctrl->sensordata->slave_info->sensor_id);
+	}
+ /* LGE_CHANGE_E, to use another fab id soojong.jin@lge.com*/
 
 	CDBG("%s: read id: %x expected id %x:\n", __func__, chipid,
 		slave_info->sensor_id);
@@ -1229,6 +1279,7 @@ static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl = {
 	.i2c_read = msm_camera_cci_i2c_read,
 	.i2c_read_seq = msm_camera_cci_i2c_read_seq,
 	.i2c_write = msm_camera_cci_i2c_write,
+	.i2c_write_seq = msm_camera_cci_i2c_write_seq,  // LGE_CHANGE.Connect to function.sujeong.kwon@lge.com 2014-03-01.
 	.i2c_write_table = msm_camera_cci_i2c_write_table,
 	.i2c_write_seq_table = msm_camera_cci_i2c_write_seq_table,
 	.i2c_write_table_w_microdelay =
@@ -1310,7 +1361,7 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev, void *data)
 		return rc;
 	}
 
-	CDBG("%s %s probe succeeded\n", __func__,
+	pr_err("%s %s probe succeeded\n", __func__, /* LGE_CHANGE_S, enable log for probing check, 2014-02-07, jungryoul.choi@lge.com */
 		s_ctrl->sensordata->sensor_name);
 	v4l2_subdev_init(&s_ctrl->msm_sd.sd,
 		s_ctrl->sensor_v4l2_subdev_ops);
@@ -1434,7 +1485,7 @@ int msm_sensor_i2c_probe(struct i2c_client *client,
 		return rc;
 	}
 
-	CDBG("%s %s probe succeeded\n", __func__, client->name);
+	pr_err("%s %s probe succeeded\n", __func__, client->name); /* LGE_CHANGE_S, enable log for probing check, 2015.1.23, sujeong.kwon@lge.com */
 	snprintf(s_ctrl->msm_sd.sd.name,
 		sizeof(s_ctrl->msm_sd.sd.name), "%s", id->name);
 	v4l2_i2c_subdev_init(&s_ctrl->msm_sd.sd, client,
