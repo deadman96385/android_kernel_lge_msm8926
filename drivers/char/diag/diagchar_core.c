@@ -43,9 +43,15 @@
 #include "diag_debugfs.h"
 #include "diag_masks.h"
 #include "diagfwd_bridge.h"
+#ifdef CONFIG_LGE_DIAG_USB_ACCESS_LOCK
+#include <mach/board_lge.h>
+#endif
 
 #include <linux/coresight-stm.h>
 #include <linux/kernel.h>
+#ifdef CONFIG_LGE_DIAG_BYPASS
+#include "lg_diag_bypass.h"
+#endif
 
 MODULE_DESCRIPTION("Diag Char Driver");
 MODULE_LICENSE("GPL v2");
@@ -1450,6 +1456,11 @@ static int diagchar_write(struct file *file, const char __user *buf,
 	int err, ret = 0, pkt_type, token_offset = 0;
 	int remote_proc = 0, data_type;
 	uint8_t index;
+
+#ifdef CONFIG_LGE_DM_APP
+	char *buf_cmp;
+#endif
+
 #ifdef DIAG_DEBUG
 	int length = 0, i;
 #endif
@@ -2059,8 +2070,13 @@ static int diagchar_setup_cdev(dev_t devno)
 		return -1;
 	}
 
+#ifdef CONFIG_MACH_LGE
+	driver->diag_dev = device_create(driver->diagchar_class, NULL, devno,
+					 (void *)driver, "diag_lge");
+#else
 	driver->diag_dev = device_create(driver->diagchar_class, NULL, devno,
 					 (void *)driver, "diag");
+#endif
 
 	if (!driver->diag_dev)
 		return -EIO;
@@ -2309,6 +2325,10 @@ static int __init diagchar_init(void)
 		printk(KERN_INFO "kzalloc failed\n");
 		goto fail;
 	}
+
+#ifdef CONFIG_LGE_DIAG_USB_ACCESS_LOCK
+	platform_driver_register(&lge_diag_cmd_driver);
+#endif
 
 	pr_info("diagchar initialized now");
 	return 0;
