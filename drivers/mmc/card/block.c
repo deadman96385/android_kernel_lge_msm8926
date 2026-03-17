@@ -1077,6 +1077,90 @@ static int get_card_status(struct mmc_card *card, u32 *status, int retries)
 	return err;
 }
 
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+static int lge_asctodec(char *buff, int num)
+{
+	int i, j;
+	int val, tmp;
+	val = 0;
+	for (i = 0; i < num; i++)
+	{
+		tmp = 1;
+		for ( j = 0; j < (num - (i + 1)); j++){
+			tmp = tmp * 10;
+		}
+		val += tmp * (buff[i] - 48);
+	}
+	pr_info("[JWKIM_TEST] dec :%d\n", val);
+	return val;
+}
+
+static void record_crc_error(char *filename)
+{
+	struct file *filp;
+	char bufs[10], asc_num[10];
+	int ret;
+	int count;
+	int num_crc;
+	int tmp;
+	int i;
+
+	mm_segment_t old_fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	filp = filp_open(filename, O_RDWR, S_IRUSR|S_IWUSR);
+	if (IS_ERR(filp)) {
+		pr_err("[JWKIM_TEST] open error\n");
+		return;
+	}
+	count = 0;
+
+	do {
+		ret = vfs_read(filp, &bufs[count], 1, &filp->f_pos);
+		count++;
+	} while (ret != 0);
+	count--;
+	bufs[count] = 0;
+	num_crc = lge_asctodec(bufs, count);
+	num_crc = num_crc + 1;
+	count = 1;
+	tmp = num_crc;
+	do {
+		tmp = tmp / 10;
+		if (!(tmp < 1))
+			count++;
+		else
+			break;
+	} while (1);
+
+
+	for (i = 0; i < count; i++) {
+		tmp = num_crc % 10;
+		asc_num[count - (i + 1)] = tmp + '0';
+		num_crc = num_crc / 10;
+	}
+	asc_num[count] = 0;
+	pr_info("[JWKIM_TEST] ascii val : %s\n", asc_num);
+
+	filp->f_pos = 0;
+
+	vfs_write(filp, asc_num, count, &filp->f_pos);
+	filp_close(filp, NULL);
+	set_fs(old_fs);
+	return;
+}
+
+
+static void record_crc_cmd_error(struct work_struct *work)
+{
+	pr_info("[JWKIM_TEST] CMD CRC Occured!!!\n");
+	record_crc_error("/persist/command_crc_error.txt");
+}
+
+static DECLARE_WORK(lge_crc_cmd_workqueue, record_crc_cmd_error);
+#endif
+
+
 #define ERR_NOMEDIUM	3
 #define ERR_RETRY	2
 #define ERR_ABORT	1
@@ -1091,6 +1175,9 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 		pr_err("%s: %s sending %s command, card status %#x\n",
 			req->rq_disk->disk_name, "response CRC error",
 			name, status);
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+	queue_work(system_nrt_wq, &lge_crc_cmd_workqueue);
+#endif
 		return ERR_RETRY;
 
 	case -ETIMEDOUT:
