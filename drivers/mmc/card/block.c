@@ -1559,7 +1559,6 @@ static int mmc_blk_err_check(struct mmc_card *card,
 		       (unsigned)blk_rq_pos(req),
 		       (unsigned)blk_rq_sectors(req),
 		       brq->cmd.resp[0], brq->stop.resp[0]);
-
 		if (rq_data_dir(req) == READ) {
 			if (ecc_err)
 				return MMC_BLK_ECC_ERR;
@@ -2112,6 +2111,11 @@ static u8 mmc_blk_prep_packed_list(struct mmc_queue *mq, struct request *req)
 
 	if (max_packed_rw == 0)
 		goto no_packed;
+
+/* LGE_UPDATE_S by p1-fs@lge.com Toshiba recommend packed number no over 8 */
+	else if (max_packed_rw > 8)
+		max_packed_rw = 8;
+/* LGE_UPDATE_E by p1-fs@lge.com */
 
 	if (mmc_req_rel_wr(cur) &&
 			(md->flags & MMC_BLK_REL_WR) &&
