@@ -7526,6 +7526,14 @@ qpnp_charger_read_dt_props(struct qpnp_chg_chip *chip)
 		}
 	}
 
+/* LGE_CHANGE_S */
+#ifdef CONFIG_LGE_PM_CHARGING_EXTERNAL_OVP
+	chip->ext_ovp_gpio = of_get_named_gpio_flags(chip->spmi->dev.of_node, "lge,ext_ovp_gpio" , 0, NULL);
+	if (of_property_read_u32(chip->spmi->dev.of_node, "lge,ext_ovp_slow_chg_trim",
+				&chip->ext_ovp_slow_chg_trim))
+		pr_err("lge,ext_ovp_slow_chg_trim is not defined\n");
+#endif
+/* LGE_CHANGE_E */
 	if (!chip->vbatdet_max_err_mv)
 		chip->vbatdet_max_err_mv = VBATDET_MAX_ERR_MV;
 
